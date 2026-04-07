@@ -585,6 +585,8 @@ const LB_KEY        = 'slimeslash_lb_v2';
 
 // ─ Dynamic sizing (recalculated on resize) ─────────────────
 let ITEM_RADIUS = 55;
+let stars = [];
+let bgLoopRunning = false;
 
 function recalcSizes() {
   // Scale radius to screen: ~8.5% of shortest dimension, clamped 38–68px
@@ -648,7 +650,6 @@ function onAllLoaded() {
 // ═══════════════════════════════════════════════════════════
 // STARFIELD
 // ═══════════════════════════════════════════════════════════
-let stars = [];
 function initStars() {
   stars = [];
   for (let i = 0; i < 130; i++) {
@@ -673,7 +674,6 @@ function drawStars() {
   }
 }
 
-let bgLoopRunning = false;
 function bgRenderLoop() {
   if (gameState === 'PLAYING') { bgLoopRunning = false; return; }
   bgLoopRunning = true;
