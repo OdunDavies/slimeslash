@@ -5,13 +5,20 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>SLIMESLASH</title>
 
-  <!-- ═══ FIREBASE config loaded from external file (gitignored) ══════════
-       Copy firebase-config.example.js → firebase-config.js and fill values.
-       Falls back to localStorage if the file is missing or databaseURL empty.
-  ══════════════════════════════════════════════════════════════════════════ -->
-  <script src="firebase-config.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+  <script>
+    // Firebase config — keys are safe to be public; security is enforced by DB rules
+    window.FIREBASE_CONFIG = {
+      apiKey:            'AIzaSyDR8VouIb5H13i_Qs46WcXOIhJblPe8ot8',
+      authDomain:        '',
+      databaseURL:       'https://slimeslash-588bc-default-rtdb.firebaseio.com',
+      projectId:         'slimeslash-588bc',
+      storageBucket:     'slimeslash-588bc.firebasestorage.app',
+      messagingSenderId: '630913968549',
+      appId:             '1:630913968549:web:4ce12ea05dc4c836fb604c',
+    };
+  </script>
 
   <style>
     *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
