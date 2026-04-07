@@ -369,6 +369,100 @@
       display: none;
     }
     #fbNotice.show { display: block; }
+
+    /* ── SCREEN SHAKE ───────────────────────────────────────────────── */
+    @keyframes shake {
+      0%,100%{ transform:translate(0,0) rotate(0deg); }
+      15%    { transform:translate(-6px,-4px) rotate(-1.2deg); }
+      30%    { transform:translate(6px,3px) rotate(1deg); }
+      45%    { transform:translate(-5px,5px) rotate(-.8deg); }
+      60%    { transform:translate(5px,-3px) rotate(.6deg); }
+      75%    { transform:translate(-3px,2px) rotate(-.4deg); }
+    }
+    .screen-shake { animation: shake 0.42s ease both; }
+
+    /* ── COUNTDOWN ──────────────────────────────────────────────────── */
+    @keyframes countdown-pop {
+      0%  { transform:scale(1.6); opacity:0; }
+      30% { transform:scale(1.0); opacity:1; }
+      70% { transform:scale(1.0); opacity:1; }
+      100%{ transform:scale(0.7); opacity:0; }
+    }
+    .countdown-animate { animation: countdown-pop 0.85s ease forwards !important; }
+    #countdownOverlay {
+      position:fixed; inset:0; display:flex; align-items:center;
+      justify-content:center; z-index:80; pointer-events:none;
+      opacity:0; transition:opacity .15s;
+    }
+    #countdownText {
+      font-family:'Courier New',monospace; font-weight:bold; color:var(--teal);
+      font-size:clamp(100px,22vmin,180px); letter-spacing:8px;
+      text-shadow:0 0 40px rgba(0,255,204,.7);
+    }
+
+    /* ── PAUSE ──────────────────────────────────────────────────────── */
+    #pauseBtn {
+      position:fixed; top:max(clamp(8px,2vmin,14px),env(safe-area-inset-top,0px));
+      right:clamp(10px,3vmin,20px); margin-top:clamp(56px,13vmin,80px);
+      background:rgba(0,12,20,0.82); border:1px solid var(--teal25);
+      color:var(--teal); font-family:'Courier New',monospace;
+      font-size:clamp(12px,3vmin,16px); letter-spacing:2px;
+      padding:8px 14px; cursor:pointer; z-index:25;
+      backdrop-filter:blur(4px); display:none; min-height:44px; min-width:44px;
+    }
+    #pauseBtn.visible { display:block; }
+    #pauseOverlay {
+      position:fixed; inset:0; background:rgba(0,15,22,.82);
+      align-items:center; justify-content:center; z-index:70; display:none;
+    }
+    #pauseOverlay.show { display:flex; }
+    #pauseOverlayText {
+      font-family:'Courier New',monospace; font-size:clamp(28px,8vmin,52px);
+      color:var(--teal); letter-spacing:8px; font-weight:bold;
+      text-shadow:0 0 30px rgba(0,255,204,.5);
+    }
+
+    /* ── MUTE ───────────────────────────────────────────────────────── */
+    #muteBtn {
+      position:fixed; bottom:max(16px,env(safe-area-inset-bottom,16px));
+      right:clamp(10px,3vmin,20px);
+      background:rgba(0,12,20,0.82); border:1px solid var(--teal25);
+      color:var(--teal45); font-family:'Courier New',monospace;
+      font-size:clamp(14px,3vmin,18px);
+      padding:8px 14px; cursor:pointer; z-index:25;
+      backdrop-filter:blur(4px); display:none; min-height:44px; min-width:44px;
+      text-align:center;
+    }
+    #muteBtn.visible { display:block; }
+
+    /* ── HEAT BAR ───────────────────────────────────────────────────── */
+    #heatBar {
+      position:fixed; bottom:0; left:0; right:0; height:3px;
+      z-index:20; pointer-events:none; display:none;
+      background:rgba(0,255,204,.08);
+    }
+    #heatBar.visible { display:block; }
+    #heatBarFill {
+      height:100%; width:0%;
+      background:linear-gradient(90deg,#00ffcc 0%,#ff9900 70%,#ff2200 100%);
+      transition:width 0.5s ease;
+    }
+
+    /* ── SLICE HINT ─────────────────────────────────────────────────── */
+    #sliceHint {
+      position:fixed; top:52%; left:50%; transform:translate(-50%,-50%);
+      font-family:'Courier New',monospace; font-size:clamp(14px,3.5vmin,20px);
+      color:rgba(0,255,204,.65); letter-spacing:3px; pointer-events:none;
+      z-index:30; text-align:center; display:none;
+    }
+    #sliceHint.visible { display:block; }
+
+    /* ── PERSONAL BEST ──────────────────────────────────────────────── */
+    #bestScore {
+      font-size:clamp(10px,2.2vmin,13px); letter-spacing:3px;
+      color:rgba(255,215,0,.65); margin-bottom:clamp(14px,3vmin,22px);
+      text-align:center; min-height:1.2em;
+    }
   </style>
 </head>
 <body>
@@ -376,6 +470,13 @@
 <canvas id="gameCanvas"></canvas>
 <div id="bombFlash"></div>
 <div id="vignette"></div>
+<div id="countdownOverlay"><div id="countdownText"></div></div>
+<div id="sliceHint">SLASH TO SLICE! ↗</div>
+<div id="comboFlash" style="position:fixed;inset:0;pointer-events:none;z-index:50;opacity:0;transition:opacity .07s;"></div>
+<div id="pauseOverlay"><div id="pauseOverlayText">PAUSED</div></div>
+<button id="pauseBtn" aria-label="Pause">⏸</button>
+<button id="muteBtn" aria-label="Mute">♪</button>
+<div id="heatBar"><div id="heatBarFill"></div></div>
 <div id="fbNotice">
   ⚡ REAL-TIME LEADERBOARD: add your Firebase config in the &lt;script&gt; block at the top of index.html
 </div>
@@ -434,6 +535,7 @@
            placeholder="ENTER NAME" maxlength="20"
            autocomplete="off" spellcheck="false" enterkeyhint="go">
     <div class="input-hint" id="nameHint">MAX 20 CHARACTERS</div>
+    <div id="bestScore"></div>
 
     <div class="btn-row">
       <button class="btn primary" id="playBtn">▶ &nbsp;PLAY</button>
@@ -644,6 +746,9 @@ function loadImageSet(srcs, target) {
 function onAllLoaded() {
   document.getElementById('loadingScreen').classList.add('hidden');
   document.getElementById('menuScreen').classList.remove('hidden');
+  const saved = localStorage.getItem('slimeslash_username');
+  if (saved) document.getElementById('nameInput').value = saved;
+  updateBestDisplay();
   requestAnimationFrame(bgRenderLoop);
 }
 
@@ -734,6 +839,101 @@ function playComboSound(lvl) {
 }
 function playGameOverSound() { [880,740,587,440,330].forEach((f,i) => playOsc(f,f*0.97,0.26,'sine',0.18,i*0.09)); }
 function playCountdownBeep() { playOsc(660, 660, 0.10, 'sine', 0.20); }
+
+// ═══════════════════════════════════════════════════════════
+// BACKGROUND MUSIC
+// ═══════════════════════════════════════════════════════════
+function startBgMusic() {
+  if (!audioCtx || bgMusicGain) return;
+  bgMusicGain = audioCtx.createGain();
+  bgMusicGain.gain.setValueAtTime(bgMusicOn ? BG_MUSIC_VOL : 0, audioCtx.currentTime);
+  bgMusicGain.connect(audioCtx.destination);
+  function bar() {
+    if (!bgMusicGain) return;
+    const bpm = 128, bd = 60 / bpm, now = audioCtx.currentTime;
+    for (let i = 0; i < 8; i++) {
+      const t = now + i * bd;
+      const k = audioCtx.createOscillator(), kg = audioCtx.createGain();
+      k.connect(kg); kg.connect(bgMusicGain); k.type = 'sine';
+      k.frequency.setValueAtTime(110, t);
+      k.frequency.exponentialRampToValueAtTime(40, t + 0.15);
+      kg.gain.setValueAtTime(0.9, t);
+      kg.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
+      k.start(t); k.stop(t + 0.25);
+    }
+    for (let i = 0; i < 16; i++) {
+      const t = now + i * (bd / 2);
+      const h = audioCtx.createOscillator(), hg = audioCtx.createGain();
+      h.connect(hg); hg.connect(bgMusicGain); h.type = 'square';
+      h.frequency.value = 7000 + Math.random() * 3000;
+      hg.gain.setValueAtTime(0.08, t);
+      hg.gain.exponentialRampToValueAtTime(0.001, t + 0.04);
+      h.start(t); h.stop(t + 0.05);
+    }
+    bgMusicTimerId = setTimeout(bar, 8 * bd * 1000 - 40);
+  }
+  bar();
+}
+function stopBgMusic() {
+  clearTimeout(bgMusicTimerId);
+  if (bgMusicGain && audioCtx) {
+    bgMusicGain.gain.setTargetAtTime(0, audioCtx.currentTime, 0.05);
+    setTimeout(() => { try { bgMusicGain.disconnect(); } catch(_){} bgMusicGain = null; }, 350);
+  }
+}
+function toggleMute() {
+  bgMusicOn = !bgMusicOn;
+  document.getElementById('muteBtn').textContent = bgMusicOn ? '♪' : '✕';
+  if (bgMusicGain && audioCtx) bgMusicGain.gain.setTargetAtTime(bgMusicOn ? BG_MUSIC_VOL : 0, audioCtx.currentTime, 0.05);
+}
+
+// ═══════════════════════════════════════════════════════════
+// COUNTDOWN
+// ═══════════════════════════════════════════════════════════
+function runCountdown(onDone) {
+  const overlay = document.getElementById('countdownOverlay');
+  const txt     = document.getElementById('countdownText');
+  const steps   = ['3', '2', '1', 'GO!'];
+  let i = 0;
+  overlay.style.opacity = '1';
+  function step() {
+    txt.className = ''; txt.textContent = steps[i];
+    void txt.offsetWidth;
+    txt.className = 'countdown-animate';
+    playCountdownBeep();
+    i++;
+    if (i < steps.length) setTimeout(step, 850);
+    else setTimeout(() => { overlay.style.opacity = '0'; onDone(); }, 850);
+  }
+  step();
+}
+
+// ═══════════════════════════════════════════════════════════
+// PERSONAL BEST
+// ═══════════════════════════════════════════════════════════
+function getPersonalBest(name) {
+  const lb = getLbLocal();
+  const matches = lb.filter(e => e.name === name.toUpperCase());
+  return matches.length ? Math.max(...matches.map(e => e.score)) : null;
+}
+function updateBestDisplay() {
+  const name = (document.getElementById('nameInput').value ||
+                localStorage.getItem('slimeslash_username') || '').trim();
+  const el   = document.getElementById('bestScore');
+  if (!el) return;
+  const best = name ? getPersonalBest(name) : null;
+  el.textContent = best !== null ? `★ BEST: ${best}` : '';
+}
+
+// ═══════════════════════════════════════════════════════════
+// HEAT BAR
+// ═══════════════════════════════════════════════════════════
+function updateHeatBar() {
+  const fill = document.getElementById('heatBarFill');
+  if (!fill) return;
+  const pct = Math.round(((1100 - getSpawnMs(elapsed)) / 700) * 100);
+  fill.style.width = Math.max(0, Math.min(100, pct)) + '%';
+}
 
 // ═══════════════════════════════════════════════════════════
 // LEADERBOARD  (Firebase real-time OR localStorage fallback)
@@ -828,7 +1028,14 @@ let elapsed     = 0;
 let lastTs      = 0;
 let rafId       = null;
 let timerInterval = null;
-let comboFadeId = null;
+let comboFadeId    = null;
+let paused         = false;
+let bgMusicGain    = null;
+let bgMusicOn      = true;
+let bgMusicTimerId = null;
+let hintShown      = false;
+let hintStartTs    = 0;
+const BG_MUSIC_VOL = 0.07;
 
 // ═══════════════════════════════════════════════════════════
 // OBJECTS
@@ -971,7 +1178,8 @@ function drawObj(o) {
   if (o.sliced) { drawHalves(o); return; }
   ctx.save();
   ctx.globalAlpha = Math.max(0, o.alpha);
-  ctx.translate(o.x, o.y);
+  const bobY = o.type === 'booster' ? Math.sin(Date.now() * 0.003) * 8 : 0;
+  ctx.translate(o.x, o.y + bobY);
   ctx.rotate(o.rot);
   ctx.shadowBlur = 0; // shadows handled per-type below to avoid blanket GPU cost
   if (o.type === 'bomb') {
@@ -1133,6 +1341,7 @@ function checkSlices() {
     if (!segHitsCircle(a.x,a.y,b.x,b.y,o.x,o.y,o.radius*0.92)) continue;
     doSlice(o, ang);
     spawnParticles(o.x, o.y, o.type);
+    if (navigator.vibrate) navigator.vibrate(o.type === 'bomb' ? [50,30,50] : 30);
 
     const now = Date.now();
     comboCount = (now - lastSliceMs < COMBO_WINDOW) ? comboCount+1 : 1;
@@ -1151,10 +1360,20 @@ function checkSlices() {
       clearTimeout(comboFadeId);
       comboFadeId = setTimeout(()=>{ comboPanel.style.opacity='0'; }, 1300);
       if (comboCount===3||comboCount===5||comboCount===7) playComboSound(mult);
+      if (mult >= 3) {
+        const cf = document.getElementById('comboFlash');
+        cf.style.background = mult >= 4 ? 'rgba(255,215,0,0.20)' : 'rgba(0,255,204,0.20)';
+        cf.style.opacity = '1';
+        setTimeout(() => { cf.style.opacity = '0'; }, 200);
+      }
     }
     if (o.type==='bomb') {
       playBombSound(); bombFlashEl.style.opacity='1';
       setTimeout(()=>{ bombFlashEl.style.opacity='0'; },140);
+      canvas.classList.remove('screen-shake');
+      void canvas.offsetWidth;
+      canvas.classList.add('screen-shake');
+      setTimeout(() => canvas.classList.remove('screen-shake'), 450);
       comboCount=0;
     } else if (o.type==='booster') { playBoosterSound();
     } else { playSliceSound(); }
@@ -1165,15 +1384,14 @@ function checkSlices() {
 // SPAWNER / DIFFICULTY
 // ═══════════════════════════════════════════════════════════
 function getSpawnMs(sec) {
-  // Faster: starts at 1100ms, drops to 280ms by end
-  const t = Math.min(sec/GAME_DURATION, 1);
-  return 1100 - 820*(1-Math.pow(1-t, 1.7));
+  const t = Math.min(sec / GAME_DURATION, 1);
+  return Math.max(400, 1100 - 820 * (1 - Math.pow(1 - t, 1.7)));
 }
 function getGroupSize(sec) {
-  if (sec<10) return 1;
-  if (sec<25) return Math.random()<0.45?2:1;
-  if (sec<40) return Math.random()<0.60?2:Math.random()<0.30?3:1;
-  return Math.random()<0.35?3:Math.random()<0.60?2:1;
+  if (sec < 10) return 1;
+  if (sec < 25) return Math.random() < 0.45 ? 2 : 1;
+  if (sec < 40) return Math.random() < 0.55 ? 2 : Math.random() < 0.20 ? 3 : 1;
+  return Math.random() < 0.55 ? 2 : 1; // capped at 2 in final phase
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1208,6 +1426,13 @@ function gameLoop(ts) {
       else setTimeout(()=>{ if(gameState==='PLAYING') objects.push(spawnOne()); }, i*180);
     }
     spawnTimer = getSpawnMs(elapsed)/16.667;
+  }
+  updateHeatBar();
+
+  // Hint auto-hide after 4s
+  if (hintShown && hintStartTs && (ts - hintStartTs) > 4000) {
+    document.getElementById('sliceHint').classList.remove('visible');
+    hintShown = false;
   }
 
   // Update + cull objects (cap at 22 live objects)
@@ -1257,15 +1482,16 @@ canvas.addEventListener('touchend',   ()=>{ isSlicing=false; trail=[]; });
 // ═══════════════════════════════════════════════════════════
 // TIMER
 // ═══════════════════════════════════════════════════════════
-function startTimer() {
-  timeLeft=GAME_DURATION; timerDisplay.textContent=timeLeft;
-  timerDisplay.classList.remove('critical'); vignette.style.opacity='0';
-  timerInterval=setInterval(()=>{
+function startTimer(reset = true) {
+  if (reset) { timeLeft = GAME_DURATION; timerDisplay.textContent = timeLeft; }
+  timerDisplay.classList.remove('critical');
+  if (reset) vignette.style.opacity = '0';
+  timerInterval = setInterval(() => {
     timeLeft--;
-    timerDisplay.textContent=timeLeft;
-    if (timeLeft<=10&&timeLeft>0) { timerDisplay.classList.add('critical'); vignette.style.opacity='0.65'; playCountdownBeep(); }
-    if (timeLeft<=0) endGame();
-  },1000);
+    timerDisplay.textContent = timeLeft;
+    if (timeLeft <= 10 && timeLeft > 0) { timerDisplay.classList.add('critical'); vignette.style.opacity = '0.65'; playCountdownBeep(); }
+    if (timeLeft <= 0) endGame();
+  }, 1000);
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1280,23 +1506,46 @@ function showOnly(id) {
 // GAME LIFECYCLE
 // ═══════════════════════════════════════════════════════════
 function startGame() {
-  // Detach any live listener
-  if (liveUnsubscribe) { liveUnsubscribe(); liveUnsubscribe=null; }
+  if (liveUnsubscribe) { liveUnsubscribe(); liveUnsubscribe = null; }
 
-  gameState=  'PLAYING'; score=0; elapsed=0; spawnTimer=48;
-  objects=[]; particles=[]; popups=[]; trail=[];
-  isSlicing=false; comboCount=0; lastSliceMs=0;
-  scoreDisplay.textContent='0'; comboPanel.style.opacity='0';
+  score = 0; elapsed = 0; spawnTimer = 48;
+  objects = []; particles = []; popups = []; trail = [];
+  isSlicing = false; comboCount = 0; lastSliceMs = 0;
+  paused = false;
+  scoreDisplay.textContent = '0'; comboPanel.style.opacity = '0';
 
   showOnly(null);
   hud.classList.add('visible');
-  vignette.style.opacity='0';
-  startTimer();
-  lastTs=performance.now();
-  rafId=requestAnimationFrame(gameLoop);
+  document.getElementById('pauseBtn').classList.add('visible');
+  document.getElementById('muteBtn').classList.add('visible');
+  document.getElementById('heatBar').classList.add('visible');
+  document.getElementById('heatBarFill').style.width = '0%';
+  vignette.style.opacity = '0';
+  gameState = 'COUNTDOWN';
+
+  runCountdown(() => {
+    gameState = 'PLAYING';
+    if (!localStorage.getItem('slimeslash_played')) {
+      localStorage.setItem('slimeslash_played', '1');
+      hintShown = true; hintStartTs = performance.now();
+      document.getElementById('sliceHint').classList.add('visible');
+    }
+    startBgMusic();
+    startTimer();
+    lastTs = performance.now();
+    rafId = requestAnimationFrame(gameLoop);
+  });
 }
 
 function endGame() {
+  paused = false;
+  stopBgMusic();
+  document.getElementById('pauseBtn').classList.remove('visible');
+  document.getElementById('muteBtn').classList.remove('visible');
+  document.getElementById('heatBar').classList.remove('visible');
+  document.getElementById('pauseOverlay').classList.remove('show');
+  document.getElementById('sliceHint').classList.remove('visible');
+
   // Set state FIRST — gameLoop checks this and will stop itself next tick
   gameState = 'GAMEOVER';
   clearInterval(timerInterval);
@@ -1349,11 +1598,15 @@ document.getElementById('playBtn').addEventListener('click', ()=>{
   const inp=document.getElementById('nameInput'), hint=document.getElementById('nameHint');
   const name=inp.value.trim();
   if (!name) { hint.textContent='⚠ PLEASE ENTER A NAME'; hint.classList.add('error'); inp.focus(); return; }
-  username=name; startGame();
+  username=name;
+  localStorage.setItem('slimeslash_username', name);
+  updateBestDisplay();
+  startGame();
 });
 document.getElementById('nameInput').addEventListener('input', ()=>{
   const hint=document.getElementById('nameHint');
   hint.textContent='MAX 20 CHARACTERS'; hint.classList.remove('error');
+  updateBestDisplay();
 });
 document.getElementById('nameInput').addEventListener('keydown', e=>{ if(e.key==='Enter') document.getElementById('playBtn').click(); });
 
@@ -1374,6 +1627,31 @@ document.getElementById('changePlayerBtn').addEventListener('click', ()=>{
   showOnly('menuScreen');
   const inp=document.getElementById('nameInput'); inp.value=''; inp.focus();
 });
+
+// ═══════════════════════════════════════════════════════════
+// PAUSE / MUTE
+// ═══════════════════════════════════════════════════════════
+function togglePause() {
+  if (gameState !== 'PLAYING' && gameState !== 'PAUSED') return;
+  const overlay = document.getElementById('pauseOverlay');
+  const btn     = document.getElementById('pauseBtn');
+  if (!paused) {
+    paused = true; gameState = 'PAUSED';
+    clearInterval(timerInterval);
+    cancelAnimationFrame(rafId); rafId = null;
+    overlay.classList.add('show'); btn.textContent = '▶';
+    if (bgMusicGain && audioCtx) bgMusicGain.gain.setTargetAtTime(0, audioCtx.currentTime, 0.1);
+  } else {
+    paused = false; gameState = 'PLAYING';
+    overlay.classList.remove('show'); btn.textContent = '⏸';
+    if (bgMusicGain && audioCtx) bgMusicGain.gain.setTargetAtTime(bgMusicOn ? BG_MUSIC_VOL : 0, audioCtx.currentTime, 0.1);
+    startTimer(false);
+    lastTs = performance.now();
+    rafId = requestAnimationFrame(gameLoop);
+  }
+}
+document.getElementById('pauseBtn').addEventListener('click', togglePause);
+document.getElementById('muteBtn').addEventListener('click', toggleMute);
 
 // ═══════════════════════════════════════════════════════════
 // BOOTSTRAP
