@@ -664,12 +664,22 @@ function initStars() {
   }
 }
 function drawStars() {
+  // Batch stars into 4 alpha buckets — far fewer fillStyle changes
   const t = Date.now() * 0.001;
+  const buckets = [[], [], [], []];
   for (const s of stars) {
     const a = s.baseA * (0.55 + 0.45 * Math.sin(t * s.speed + s.phase));
+    buckets[Math.min(3, Math.floor(a * 4))].push(s);
+  }
+  const alphas = [0.12, 0.28, 0.52, 0.78];
+  for (let b = 0; b < 4; b++) {
+    if (!buckets[b].length) continue;
+    ctx.fillStyle = `rgba(190,235,255,${alphas[b]})`;
     ctx.beginPath();
-    ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
-    ctx.fillStyle = `rgba(190,235,255,${a})`;
+    for (const s of buckets[b]) {
+      ctx.moveTo(s.x + s.r, s.y);
+      ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+    }
     ctx.fill();
   }
 }
@@ -958,7 +968,7 @@ function drawObj(o) {
   ctx.globalAlpha = Math.max(0, o.alpha);
   ctx.translate(o.x, o.y);
   ctx.rotate(o.rot);
-  if (o.type === 'booster') { ctx.shadowColor = '#FFD700'; ctx.shadowBlur = 28; }
+  ctx.shadowBlur = 0; // shadows handled per-type below to avoid blanket GPU cost
   if (o.type === 'bomb') {
     drawBombShape(ctx);
   } else {
@@ -1011,20 +1021,42 @@ const PCOLS = {
   booster: ['#FFD700','#FF9900','#FFE566','#ffffff'],
   bomb:    ['#ff4444','#ff2200','#ff9900','#ffffff'],
 };
+const MAX_PARTICLES = 120;
 function spawnParticles(x, y, type) {
   const cols = PCOLS[type] || PCOLS.point;
-  const n    = type==='booster'?24:type==='bomb'?20:16;
+  const n    = type==='booster'?18:type==='bomb'?14:12;
   for (let i = 0; i < n; i++) {
-    const ang = (Math.PI*2*i/n)+Math.random()*0.6, sp = 2.5+Math.random()*6;
+    const ang = (Math.PI*2*i/n)+Math.random()*0.6, sp = 2.5+Math.random()*5.5;
     particles.push({ x, y, vx:Math.cos(ang)*sp, vy:Math.sin(ang)*sp-1.5,
-      r:Math.random()*5+2, color:cols[Math.floor(Math.random()*cols.length)], alpha:1 });
+      r:Math.random()*4+1.5, color:cols[Math.floor(Math.random()*cols.length)], alpha:1 });
   }
+  // Hard cap — drop oldest particles to stay fast
+  if (particles.length > MAX_PARTICLES) particles.splice(0, particles.length - MAX_PARTICLES);
 }
-function updateParticle(p) { p.x+=p.vx; p.y+=p.vy; p.vy+=0.18; p.vx*=0.97; p.alpha-=0.024; }
-function drawParticle(p) {
-  ctx.save(); ctx.globalAlpha=Math.max(0,p.alpha);
-  ctx.fillStyle=p.color; ctx.shadowColor=p.color; ctx.shadowBlur=7;
-  ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,Math.PI*2); ctx.fill(); ctx.restore();
+function updateParticle(p) { p.x+=p.vx; p.y+=p.vy; p.vy+=0.18; p.vx*=0.97; p.alpha-=0.028; }
+
+// Draw all particles in one batched pass — group by color, zero shadowBlur
+function drawAllParticles() {
+  if (!particles.length) return;
+  // group by color
+  const groups = {};
+  for (const p of particles) {
+    if (p.alpha <= 0) continue;
+    (groups[p.color] = groups[p.color] || []).push(p);
+  }
+  ctx.shadowBlur = 0;
+  for (const [color, ps] of Object.entries(groups)) {
+    ctx.beginPath();
+    for (const p of ps) {
+      ctx.moveTo(p.x + p.r, p.y);
+      ctx.arc(p.x, p.y, p.r, 0, Math.PI*2);
+    }
+    // Use globalAlpha of first particle as rough average — fast enough
+    ctx.globalAlpha = Math.max(0, ps[0].alpha);
+    ctx.fillStyle = color;
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1049,16 +1081,28 @@ function drawPopup(p) {
 function drawTrail() {
   if (trail.length < 2) return;
   ctx.save(); ctx.lineCap='round'; ctx.lineJoin='round';
-  for (let i = 1; i < trail.length; i++) {
-    const t = i / trail.length;
-    ctx.beginPath(); ctx.moveTo(trail[i-1].x,trail[i-1].y); ctx.lineTo(trail[i].x,trail[i].y);
-    ctx.strokeStyle=`rgba(200,255,240,${t*0.9})`; ctx.lineWidth=t*7;
-    ctx.shadowColor='#00ffcc'; ctx.shadowBlur=8; ctx.stroke();
-  }
-  if (isSlicing && trail.length) {
+  ctx.shadowBlur = 0; // no per-segment shadow — too expensive
+  // Draw thick base line (white-ish, semi-transparent)
+  ctx.beginPath();
+  ctx.moveTo(trail[0].x, trail[0].y);
+  for (let i = 1; i < trail.length; i++) ctx.lineTo(trail[i].x, trail[i].y);
+  ctx.strokeStyle = 'rgba(180,255,235,0.55)';
+  ctx.lineWidth = 6;
+  ctx.stroke();
+  // Draw thinner bright tip portion (last 40% of trail)
+  const start = Math.floor(trail.length * 0.6);
+  ctx.beginPath();
+  ctx.moveTo(trail[start].x, trail[start].y);
+  for (let i = start+1; i < trail.length; i++) ctx.lineTo(trail[i].x, trail[i].y);
+  ctx.strokeStyle = 'rgba(220,255,248,0.88)';
+  ctx.lineWidth = 3;
+  ctx.stroke();
+  // Bright tip dot
+  if (isSlicing) {
     const tip = trail[trail.length-1];
-    ctx.beginPath(); ctx.arc(tip.x,tip.y,4.5,0,Math.PI*2);
-    ctx.fillStyle='rgba(255,255,255,.95)'; ctx.shadowColor='#fff'; ctx.shadowBlur=14; ctx.fill();
+    ctx.beginPath(); ctx.arc(tip.x, tip.y, 4, 0, Math.PI*2);
+    ctx.fillStyle = 'rgba(255,255,255,0.95)';
+    ctx.fill();
   }
   ctx.restore();
 }
@@ -1116,14 +1160,15 @@ function checkSlices() {
 // SPAWNER / DIFFICULTY
 // ═══════════════════════════════════════════════════════════
 function getSpawnMs(sec) {
+  // Faster: starts at 1100ms, drops to 280ms by end
   const t = Math.min(sec/GAME_DURATION, 1);
-  return 1500 - 1140*(1-Math.pow(1-t, 2.0));
+  return 1100 - 820*(1-Math.pow(1-t, 1.7));
 }
 function getGroupSize(sec) {
-  if (sec<15) return 1;
-  if (sec<30) return Math.random()<0.35?2:1;
-  if (sec<45) return Math.random()<0.55?2:Math.random()<0.25?3:1;
-  return Math.random()<0.30?3:Math.random()<0.65?2:1;
+  if (sec<10) return 1;
+  if (sec<25) return Math.random()<0.45?2:1;
+  if (sec<40) return Math.random()<0.60?2:Math.random()<0.30?3:1;
+  return Math.random()<0.35?3:Math.random()<0.60?2:1;
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1147,20 +1192,24 @@ function gameLoop(ts) {
     spawnTimer = getSpawnMs(elapsed)/16.667;
   }
 
+  // Update + cull objects (cap at 22 live objects)
   for (let i = objects.length-1; i >= 0; i--) {
     updateObj(objects[i]);
     if (isExpired(objects[i])) objects.splice(i,1);
   }
+  if (objects.length > 22) objects.splice(0, objects.length - 22);
   objects.forEach(drawObj);
 
   if (isSlicing) checkSlices();
   drawTrail();
 
+  // Update particles
   for (let i = particles.length-1; i >= 0; i--) {
     updateParticle(particles[i]);
-    if (particles[i].alpha<=0) { particles.splice(i,1); continue; }
-    drawParticle(particles[i]);
+    if (particles[i].alpha <= 0) particles.splice(i, 1);
   }
+  drawAllParticles(); // batched — single pass, no shadowBlur
+
   for (let i = popups.length-1; i >= 0; i--) {
     updatePopup(popups[i]);
     if (popups[i].alpha<=0) { popups.splice(i,1); continue; }
