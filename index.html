@@ -5,21 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>SLIMESLASH</title>
 
-  <!-- ═══ FIREBASE (real-time leaderboard) ═══════════════════════════════════
-       Leave empty strings to use localStorage only.
-       To enable: paste your Firebase project config values below.
+  <!-- ═══ FIREBASE config loaded from external file (gitignored) ══════════
+       Copy firebase-config.example.js → firebase-config.js and fill values.
+       Falls back to localStorage if the file is missing or databaseURL empty.
   ══════════════════════════════════════════════════════════════════════════ -->
-  <script>
-    window.FIREBASE_CONFIG = {
-      apiKey:            'AIzaSyDR8VouIb5H13i_Qs46WcXOIhJblPe8ot8',
-      authDomain:        '',
-      databaseURL:       'https://slimeslash-588bc-default-rtdb.firebaseio.com',   // ← required for real-time DB
-      projectId:         'slimeslash-588bc',
-      storageBucket:     'slimeslash-588bc.firebasestorage.app',
-      messagingSenderId: '630913968549',
-      appId:             '1:630913968549:web:4ce12ea05dc4c836fb604c',
-    };
-  </script>
+  <script src="firebase-config.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 
@@ -488,10 +478,7 @@ const FB_PATH = 'slimeslash_lb';
 (function initFirebase() {
   try {
     const cfg = window.FIREBASE_CONFIG || {};
-    if (!cfg.databaseURL) {
-      document.getElementById('fbNotice').classList.add('show');
-      return;
-    }
+    if (!cfg.databaseURL) return; // no config → silent localStorage fallback
     firebase.initializeApp(cfg);
     db = firebase.database();
   } catch (e) {
