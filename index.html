@@ -754,18 +754,21 @@ function saveLbLocal(name, score) {
 async function saveScore(name, score) {
   if (db) {
     try {
-      await db.ref(FB_PATH).push({
-        name:  name.toUpperCase(),
-        score: score,
-        date:  new Date().toLocaleDateString(),
-        ts:    Date.now(),
-      });
-      // Also cache locally
+      // 4s timeout — never let Firebase hang the end screen
+      const timeout = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Firebase timeout')), 4000));
+      await Promise.race([
+        db.ref(FB_PATH).push({
+          name: name.toUpperCase(), score,
+          date: new Date().toLocaleDateString(),
+          ts:   Date.now(),
+        }),
+        timeout,
+      ]);
       saveLbLocal(name, score);
-      // Rank from local cache for instant feedback
       return getLbLocal().findIndex(e => e.name === name.toUpperCase() && e.score === score) + 1;
     } catch (e) {
-      console.warn('Firebase save failed, using localStorage', e);
+      console.warn('Firebase save failed, falling back to localStorage:', e.message);
     }
   }
   return saveLbLocal(name, score);
@@ -1177,8 +1180,12 @@ function getGroupSize(sec) {
 // GAME LOOP
 // ═══════════════════════════════════════════════════════════
 function gameLoop(ts) {
-  if (gameState !== 'PLAYING') return;
-  // Always re-queue FIRST — ensures loop never dies even if this frame throws
+  if (gameState !== 'PLAYING') {
+    // State changed mid-frame — cancel the RAF we already queued
+    if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+    return;
+  }
+  // Re-queue before rendering so loop survives errors
   rafId = requestAnimationFrame(gameLoop);
 
   try {
@@ -1289,30 +1296,49 @@ function startGame() {
   rafId=requestAnimationFrame(gameLoop);
 }
 
-async function endGame() {
-  gameState='GAMEOVER';
-  clearInterval(timerInterval); cancelAnimationFrame(rafId);
-  hud.classList.remove('visible'); vignette.style.opacity='0';
-  isSlicing=false; trail=[];
+function endGame() {
+  // Set state FIRST — gameLoop checks this and will stop itself next tick
+  gameState = 'GAMEOVER';
+  clearInterval(timerInterval);
+  cancelAnimationFrame(rafId);
+  rafId = null;
+
+  hud.classList.remove('visible');
+  vignette.style.opacity = '0';
+  bombFlashEl.style.opacity = '0';
+  isSlicing = false; trail = [];
+
   playGameOverSound();
 
-  const rank = await saveScore(username, score);
-  const isNR  = rank===1;
-  document.getElementById('finalScore').textContent=score;
-  document.getElementById('newRecord').classList.toggle('hidden',!isNR);
-  document.getElementById('rankBadge').textContent=rank<=10?`# ${rank} ON THE BOARD`:'KEEP SLICING!';
-
-  // Show live or static leaderboard title
-  const goTitle = document.getElementById('goLbTitle');
-  goTitle.innerHTML = db
+  // Show game over screen immediately — don't wait on Firebase
+  const finalScoreVal = score;
+  const finalUsername = username;
+  document.getElementById('finalScore').textContent = finalScoreVal;
+  document.getElementById('newRecord').classList.add('hidden');
+  document.getElementById('rankBadge').textContent = '...';
+  document.getElementById('goLbTitle').innerHTML = db
     ? '<span class="lb-live-dot"></span> LIVE LEADERBOARD'
     : '— LEADERBOARD —';
 
-  // Start live listener
-  liveUnsubscribe = listenLb('goLbWrap', username, score);
-
+  // Show the screen right away
   showOnly('gameOverScreen');
   if (!bgLoopRunning) requestAnimationFrame(bgRenderLoop);
+
+  // Save score async — update rank badge + leaderboard when done
+  saveScore(finalUsername, finalScoreVal).then(rank => {
+    document.getElementById('rankBadge').textContent =
+      rank <= 10 ? `# ${rank} ON THE BOARD` : 'KEEP SLICING!';
+    if (rank === 1) document.getElementById('newRecord').classList.remove('hidden');
+    // Attach live listener now that score is saved
+    if (liveUnsubscribe) { liveUnsubscribe(); liveUnsubscribe = null; }
+    liveUnsubscribe = listenLb('goLbWrap', finalUsername, finalScoreVal);
+  }).catch(() => {
+    // Firebase failed — fall back to local
+    const rank = saveLbLocal(finalUsername, finalScoreVal);
+    document.getElementById('rankBadge').textContent =
+      rank <= 10 ? `# ${rank} ON THE BOARD` : 'KEEP SLICING!';
+    renderEntries(getLbLocal(), 'goLbWrap', finalUsername, finalScoreVal);
+  });
 }
 
 // ═══════════════════════════════════════════════════════════
