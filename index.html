@@ -493,7 +493,7 @@
 <button id="muteBtn" aria-label="Mute">♪</button>
 <div id="heatBar"><div id="heatBarFill"></div></div>
 <div id="fbNotice">
-  ⚡ REAL-TIME LEADERBOARD: add your Firebase config in the &lt;script&gt; block at the top of index.html
+  ⚡ OFFLINE MODE: leaderboard shows only local scores. Check Firebase Console → Realtime Database → Rules and set <code>".read":true, ".write":true</code> for public play.
 </div>
 
 <!-- HUD -->
@@ -626,6 +626,10 @@ function initFirebase() {
       console.warn('Firebase init failed, using localStorage:', e);
     }
   });
+  // Show offline notice after 6s if db never connected (expired rules, network issue, etc.)
+  setTimeout(() => {
+    if (!db) document.getElementById('fbNotice').classList.add('show');
+  }, 6000);
 }
 initFirebase();
 
@@ -976,35 +980,36 @@ function saveLbLocal(name, score) {
 }
 
 // Save score (returns Promise<rank>)
-// Each player is stored under their name as key — one entry per player, best score wins.
+// One entry per player keyed by name; only updates when new score beats their stored best.
 async function saveScore(name, score) {
   const uname = name.toUpperCase().replace(/[.#$[\]/]/g, '_');
   if (db) {
     try {
       const timeout = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Firebase timeout')), 4000));
+        setTimeout(() => reject(new Error('Firebase timeout')), 5000));
       await Promise.race([
-        db.ref(`${FB_PATH}/${uname}`).transaction(current => {
-          // Only write if no entry exists or new score is higher
+        (async () => {
+          const snap    = await db.ref(`${FB_PATH}/${uname}`).once('value');
+          const current = snap.val();
           if (!current || score > current.score) {
-            return { name: name.toUpperCase(), score,
-                     date: new Date().toLocaleDateString(), ts: Date.now() };
+            await db.ref(`${FB_PATH}/${uname}`).set({
+              name: name.toUpperCase(), score,
+              date: new Date().toLocaleDateString(), ts: Date.now(),
+            });
           }
-          return; // abort — current best is already higher
-        }),
+        })(),
         timeout,
       ]);
-      saveLbLocal(name, score);
-      return getLbLocal().findIndex(e => e.name === name.toUpperCase()) + 1;
     } catch (e) {
-      console.warn('Firebase save failed, falling back to localStorage:', e.message);
+      console.warn('Firebase save failed, using localStorage:', e.message);
     }
   }
+  // Always persist locally (covers offline + populates personal best)
   return saveLbLocal(name, score);
 }
 
-// Render leaderboard entries array into a container
-function renderEntries(entries, containerId, hlName, hlScore) {
+// Render leaderboard entries into a container; hlName row is highlighted
+function renderEntries(entries, containerId, hlName) {
   const el = document.getElementById(containerId);
   if (!el) return;
   if (!entries || !entries.length) {
@@ -1013,28 +1018,27 @@ function renderEntries(entries, containerId, hlName, hlScore) {
   }
   let html = '<table class="lb-table"><thead><tr><th>#</th><th>PLAYER</th><th class="date-col">DATE</th><th>SCORE</th></tr></thead><tbody>';
   entries.forEach((e, i) => {
-    const hl = (e.name === (hlName||'').toUpperCase() && e.score === hlScore) ? ' class="highlight"' : '';
+    const hl = (hlName && e.name === hlName.toUpperCase()) ? ' class="highlight"' : '';
     html += `<tr${hl}><td class="rank-col">${i+1}</td><td>${e.name}</td><td class="date-col">${e.date||''}</td><td>${e.score}</td></tr>`;
   });
   html += '</tbody></table>';
   el.innerHTML = html;
 }
 
-// Start a live leaderboard listener for a container element
-// Returns a function to unsubscribe
-function listenLb(containerId, hlName, hlScore) {
+// Attach a live leaderboard listener; returns unsubscribe function
+function listenLb(containerId, hlName) {
   if (db) {
     const ref = db.ref(FB_PATH).orderByChild('score').limitToLast(10);
     const handler = snap => {
       const entries = [];
-      snap.forEach(child => entries.unshift(child.val())); // descending
-      renderEntries(entries, containerId, hlName, hlScore);
+      snap.forEach(child => entries.unshift(child.val())); // descending by score
+      renderEntries(entries, containerId, hlName);
     };
     ref.on('value', handler);
     return () => ref.off('value', handler);
   }
-  // localStorage: single render, no real-time
-  renderEntries(getLbLocal(), containerId, hlName, hlScore);
+  // localStorage fallback — single render, no real-time
+  renderEntries(getLbLocal(), containerId, hlName);
   return () => {};
 }
 
@@ -1588,7 +1592,6 @@ function endGame() {
 
   playGameOverSound();
 
-  // Show game over screen immediately — don't wait on Firebase
   const finalScoreVal = score;
   const finalUsername = username;
   document.getElementById('finalScore').textContent = finalScoreVal;
@@ -1598,24 +1601,22 @@ function endGame() {
     ? '<span class="lb-live-dot"></span> LIVE LEADERBOARD'
     : '— LEADERBOARD —';
 
-  // Show the screen right away
+  // Show game over screen immediately
   showOnly('gameOverScreen');
   if (!bgLoopRunning) requestAnimationFrame(bgRenderLoop);
 
-  // Save score async — update rank badge + leaderboard when done
-  saveScore(finalUsername, finalScoreVal).then(rank => {
+  // Show current leaderboard right away (before save so it's never blank)
+  if (liveUnsubscribe) { liveUnsubscribe(); liveUnsubscribe = null; }
+  liveUnsubscribe = listenLb('goLbWrap', finalUsername);
+
+  // Save score async — refresh leaderboard and rank badge when done
+  saveScore(finalUsername, finalScoreVal).then(localRank => {
     document.getElementById('rankBadge').textContent =
-      rank <= 10 ? `# ${rank} ON THE BOARD` : 'KEEP SLICING!';
-    if (rank === 1) document.getElementById('newRecord').classList.remove('hidden');
-    // Attach live listener now that score is saved
+      localRank <= 10 ? `# ${localRank} ON THE BOARD` : 'KEEP SLICING!';
+    if (localRank === 1) document.getElementById('newRecord').classList.remove('hidden');
+    // Re-attach listener so the newly saved entry appears
     if (liveUnsubscribe) { liveUnsubscribe(); liveUnsubscribe = null; }
-    liveUnsubscribe = listenLb('goLbWrap', finalUsername, finalScoreVal);
-  }).catch(() => {
-    // Firebase failed — fall back to local
-    const rank = saveLbLocal(finalUsername, finalScoreVal);
-    document.getElementById('rankBadge').textContent =
-      rank <= 10 ? `# ${rank} ON THE BOARD` : 'KEEP SLICING!';
-    renderEntries(getLbLocal(), 'goLbWrap', finalUsername, finalScoreVal);
+    liveUnsubscribe = listenLb('goLbWrap', finalUsername);
   });
 }
 
@@ -1645,7 +1646,7 @@ document.getElementById('menuLbBtn').addEventListener('click', ()=>{
   const title=document.getElementById('lbTitle');
   title.innerHTML = db ? '<span class="lb-live-dot"></span> LIVE LEADERBOARD' : '⊞ &nbsp;LEADERBOARD';
   if (liveUnsubscribe) { liveUnsubscribe(); liveUnsubscribe=null; }
-  liveUnsubscribe = listenLb('lbContent', '', -1);
+  liveUnsubscribe = listenLb('lbContent', '');
   showOnly('lbOverlay');
 });
 document.getElementById('lbCloseBtn').addEventListener('click', ()=>{
@@ -1658,7 +1659,7 @@ document.getElementById('goLbBtn').addEventListener('click', ()=>{
   const title=document.getElementById('lbTitle');
   title.innerHTML = db ? '<span class="lb-live-dot"></span> LIVE LEADERBOARD' : '⊞ &nbsp;LEADERBOARD';
   if (liveUnsubscribe) { liveUnsubscribe(); liveUnsubscribe=null; }
-  liveUnsubscribe = listenLb('lbContent', username, -1);
+  liveUnsubscribe = listenLb('lbContent', username);
   showOnly('lbOverlay');
 });
 
