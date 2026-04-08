@@ -415,12 +415,21 @@
     #pauseOverlay {
       position:fixed; inset:0; background:rgba(0,15,22,.82);
       align-items:center; justify-content:center; z-index:70; display:none;
+      cursor:pointer;
     }
     #pauseOverlay.show { display:flex; }
     #pauseOverlayText {
       font-family:'Courier New',monospace; font-size:clamp(28px,8vmin,52px);
       color:var(--teal); letter-spacing:8px; font-weight:bold;
       text-shadow:0 0 30px rgba(0,255,204,.5);
+    }
+    #pauseResumeTip {
+      font-family:'Courier New',monospace; font-size:clamp(11px,2.5vmin,14px);
+      color:rgba(0,255,204,.5); letter-spacing:4px; margin-top:18px;
+      animation: pulse-tip 1.4s infinite alternate;
+    }
+    @keyframes pulse-tip {
+      from { opacity:0.4; } to { opacity:1; }
     }
 
     /* ── MUTE ───────────────────────────────────────────────────────── */
@@ -474,7 +483,12 @@
 <div id="countdownOverlay"><div id="countdownText"></div></div>
 <div id="sliceHint">SLASH TO SLICE! ↗</div>
 <div id="comboFlash" style="position:fixed;inset:0;pointer-events:none;z-index:50;opacity:0;transition:opacity .07s;"></div>
-<div id="pauseOverlay"><div id="pauseOverlayText">PAUSED</div></div>
+<div id="pauseOverlay">
+  <div style="text-align:center">
+    <div id="pauseOverlayText">PAUSED</div>
+    <div id="pauseResumeTip">▶ &nbsp;TAP ANYWHERE TO RESUME</div>
+  </div>
+</div>
 <button id="pauseBtn" aria-label="Pause">⏸</button>
 <button id="muteBtn" aria-label="Mute">♪</button>
 <div id="heatBar"><div id="heatBarFill"></div></div>
@@ -559,7 +573,7 @@
 
     <div class="btn-row" style="margin-top:18px">
       <button class="btn primary" id="playAgainBtn">▶ &nbsp;PLAY AGAIN</button>
-      <button class="btn" id="changePlayerBtn">◈ &nbsp;CHANGE PLAYER</button>
+      <button class="btn" id="goLbBtn">⊞ &nbsp;LEADERBOARD</button>
     </div>
   </div>
 </div>
@@ -582,7 +596,7 @@
 // FIREBASE INIT (optional real-time leaderboard)
 // ═══════════════════════════════════════════════════════════
 let db = null;
-const FB_PATH = 'slimeslash_lb';
+const FB_PATH = 'slimeslash_lb_v3';
 
 function initFirebase() {
   const cfg = window.FIREBASE_CONFIG || {};
@@ -1625,7 +1639,9 @@ document.getElementById('nameInput').addEventListener('input', ()=>{
 });
 document.getElementById('nameInput').addEventListener('keydown', e=>{ if(e.key==='Enter') document.getElementById('playBtn').click(); });
 
+let lbReturnScreen = 'menuScreen';
 document.getElementById('menuLbBtn').addEventListener('click', ()=>{
+  lbReturnScreen = 'menuScreen';
   const title=document.getElementById('lbTitle');
   title.innerHTML = db ? '<span class="lb-live-dot"></span> LIVE LEADERBOARD' : '⊞ &nbsp;LEADERBOARD';
   if (liveUnsubscribe) { liveUnsubscribe(); liveUnsubscribe=null; }
@@ -1634,13 +1650,16 @@ document.getElementById('menuLbBtn').addEventListener('click', ()=>{
 });
 document.getElementById('lbCloseBtn').addEventListener('click', ()=>{
   if (liveUnsubscribe) { liveUnsubscribe(); liveUnsubscribe=null; }
-  showOnly('menuScreen');
+  showOnly(lbReturnScreen);
 });
 document.getElementById('playAgainBtn').addEventListener('click', ()=>{ initAudio(); startGame(); });
-document.getElementById('changePlayerBtn').addEventListener('click', ()=>{
+document.getElementById('goLbBtn').addEventListener('click', ()=>{
+  lbReturnScreen = 'gameOverScreen';
+  const title=document.getElementById('lbTitle');
+  title.innerHTML = db ? '<span class="lb-live-dot"></span> LIVE LEADERBOARD' : '⊞ &nbsp;LEADERBOARD';
   if (liveUnsubscribe) { liveUnsubscribe(); liveUnsubscribe=null; }
-  showOnly('menuScreen');
-  const inp=document.getElementById('nameInput'); inp.value=''; inp.focus();
+  liveUnsubscribe = listenLb('lbContent', username, -1);
+  showOnly('lbOverlay');
 });
 
 // ═══════════════════════════════════════════════════════════
@@ -1666,6 +1685,7 @@ function togglePause() {
   }
 }
 document.getElementById('pauseBtn').addEventListener('click', togglePause);
+document.getElementById('pauseOverlay').addEventListener('click', togglePause);
 document.getElementById('muteBtn').addEventListener('click', toggleMute);
 
 // ═══════════════════════════════════════════════════════════
